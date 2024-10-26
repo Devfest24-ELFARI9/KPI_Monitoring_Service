@@ -1,10 +1,12 @@
 const express = require('express');
 const bodyParser = require('body-parser');
+const cors = require('cors');
 const { InfluxDB, Point } = require('@influxdata/influxdb-client');
 const { sendMessage } = require('./utils/rabbitMQUtils');
 require('dotenv').config();
 
 const app = express();
+app.use(cors());
 app.use(bodyParser.json());
 
 console.log(process.env.INFLUXDB_URL, process.env.INFLUXDB_TOKEN, process.env.INFLUXDB_ORG, process.env.INFLUXDB_BUCKET);
@@ -17,39 +19,45 @@ writeApi.useDefaultTags({ host: 'host1' });
 const mockModel = (data) => {
   const anomaly = Math.random() < 0.1; // 10% chance of anomaly
   const forecastedPoint1 = data.KPI_Value + Math.random() * 10;
-  const trend = forecastedPoint2 > forecastedPoint1 ? 'up' : 'down';
+  const trend = 'up';
   return { anomaly, forecastedPoint1, trend };
 };
 
 app.get('/data/retrieve', async (req, res) => {
-  const { KPI_Name, start, stop } = req.query;
+  console.log("rani hhnna")
+  const { KPI_Name } = req.query;
+  console.log("KPI_NAME",KPI_Name,req.query)
+
+  // Calculate timestamp for 30 days ago
+  const date30DaysAgo = new Date();
+  date30DaysAgo.setDate(date30DaysAgo.getDate() - 30);
+  const startTimestamp = date30DaysAgo.toISOString();
 
   const query = `
     from(bucket: "${process.env.INFLUXDB_BUCKET}")
-      |> range(start: ${start}, stop: ${stop})
+      |> range(start: ${"2017-07-31T04:44:00Z"})
       |> filter(fn: (r) => r["_measurement"] == "kpi")
       |> filter(fn: (r) => r["kpi_name"] == "${KPI_Name}")
-      |> yield(name: "mean")
+      |> sort(columns: ["_time"], desc: true)
+      |> limit(n: 10)
+      |> yield(name: "last")
   `;
+
+  console.log(query);
 
   try {
     const results = await queryApi.collectRows(query);
 
-    // Initialize an object to store the consolidated data
-    let responseObject = {
+    // Convert results into an array of objects for the response
+    const responseArray = results.map(record => ({
       kpi_name: KPI_Name,
-    };
+      kpi_value: record._field === 'kpi_value' ? record._value : null,
+      anomaly: record._field === 'anomaly' ? record._value : null,
+      timestamp: record._time,
+    })).filter(entry => entry.kpi_value !== null || entry.anomaly !== null);
 
-    results.forEach(record => {
-      if (record._field === 'kpi_value') responseObject.kpi_value = record._value;
-      if (record._field === 'anomaly') responseObject.anomaly = record._value;
-      // Assign timestamp from any record, since they all should have the same one
-      if (!responseObject.timestamp) responseObject.timestamp = record._time;
-    });
-
-    // Send the consolidated response
-    if (responseObject.kpi_value !== undefined || responseObject.anomaly !== undefined) {
-      res.status(200).json(responseObject);
+    if (responseArray.length > 0) {
+      res.status(200).json(responseArray);
     } else {
       res.status(404).json({ message: "No data found for this KPI." });
     }
@@ -58,9 +66,6 @@ app.get('/data/retrieve', async (req, res) => {
     res.status(500).send('Error retrieving data');
   }
 });
-
-
-
 
 app.post('/data', async (req, res) => {
   const { KPI_Name, KPI_Value, Timestamp } = req.body;

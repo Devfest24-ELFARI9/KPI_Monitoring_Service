@@ -4,7 +4,7 @@ const axios = require('axios');
 
 const csvFilePath = './dataset/test_set_rec.csv';
 const postUrl = 'http://localhost:3010/data';
-const interval = 30000; 
+const interval = 10000; 
 const maxRows = 100; // Maximum number of rows to read
 
 let dataPoints = [];
