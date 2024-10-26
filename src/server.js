@@ -19,7 +19,8 @@ writeApi.useDefaultTags({ host: 'host1' });
 const mockModel = (data) => {
   const anomaly = Math.random() < 0.1; // 10% chance of anomaly
   const forecastedPoint1 = data.KPI_Value + Math.random() * 10;
-  const trend = 'up';
+  const forecastedPoint2 = data.KPI_Value + Math.random() * 10;
+  const trend = forecastedPoint2 > forecastedPoint1 ? 'up' : 'down';
   return { anomaly, forecastedPoint1, trend };
 };
 
@@ -95,6 +96,16 @@ app.post('/data', async (req, res) => {
   console.log('Sending message to queue:', message);
 
   await sendMessage('kpi_queue', JSON.stringify(message));
+
+  if(modelResult.anomaly){
+    const kpiAlertMessage={
+      KPI_Name,
+      KPI_Value,
+      Timestamp
+    };
+    console.log("sending a kpi alert message");
+    await sendMessage('kpi_alert_queue', JSON.stringify(kpiAlertMessage));
+  }
 
   res.status(200).send('Data processed successfully');
 });
