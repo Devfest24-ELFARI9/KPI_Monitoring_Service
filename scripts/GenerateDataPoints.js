@@ -8,13 +8,12 @@ const interval = 10000;
 const maxRows = 100; // Maximum number of rows to read
 
 let dataPoints = [];
-let currentIndex = 0;
+let currentIndex = 5;
 
 fs.createReadStream(csvFilePath)
     .pipe(csv())
     .on('data', (row) => {
         if (dataPoints.length < maxRows) {
-            // Replace spaces in KPI_Name with underscores
             if (row.KPI_Name) {
                 row.KPI_Name = row.KPI_Name.replace(/\s+/g, '_');
             }
