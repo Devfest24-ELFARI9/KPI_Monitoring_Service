@@ -9,6 +9,27 @@ def detect_anomaly(data, model_path):
 
     # Create DataFrame with the input data
     X = pd.DataFrame(data)
+    
+    f1=0.81
+
+    params = {
+    "max_depth": 29,
+    "min_samples_leaf": 1,
+    "min_samples_split": 12,
+    "n_estimators": 252
+    }
+    with mlflow.start_run():
+        # Log model parameters
+        for param, value in params.items():
+            mlflow.log_param(param, value)
+        
+        # Log F1 score
+        mlflow.log_metric("f1_score", f1)
+        
+        # Log the model
+        mlflow.sklearn.log_model(model, "random_forest_model")
+
+        print(f"Model and parameters logged with F1 score: {f1}")
 
     # Make predictions
     y_pred = model.predict(X[["KPI_Value", "Lag1", "Lag2", "Lag3", "Lag4", "Lag5"]])

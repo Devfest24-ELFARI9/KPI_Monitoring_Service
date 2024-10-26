@@ -2,7 +2,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const { InfluxDB, Point } = require('@influxdata/influxdb-client');
 const { sendMessage } = require('./utils/rabbitMQUtils');
-const { execFile } = require('child_process');
+const {forecastAndCheckAnomalies}= require('./utils/anomalyForecastUtils');
+const { runModel } = require('./utils/runModel');
 require('dotenv').config();
 
 const app = express();
@@ -55,19 +56,7 @@ const getPreviousDataPoints = async (kpiName, timestamp) => {
   }
 };
 
-const runModel = (script, data) => {
-  return new Promise((resolve, reject) => {
-    const input = JSON.stringify(data);
-    execFile('python3', [script, input], (error, stdout, stderr) => {
-      if (error) {
-        reject(error);
-      } else {
-        console.log("Model results:",script, JSON.parse(stdout));
-        resolve(JSON.parse(stdout));
-      }
-    });
-  });
-};
+
 
 app.get('/data/retrieve', async (req, res) => {
   console.log("rani hhnna")
@@ -139,12 +128,13 @@ app.post('/data', async (req, res) => {
     Timestamp: [Timestamp]
   };
 
+
   try {
     // Run anomaly detection model
     const anomalyResult = await runModel('modelScript/predict.py', PredictModelData);
 
     // Run forecasting model
-    const forecastResult = await runModel('modelScript/forecast.py', ForecastModelData);
+    const forecastResult = await runModel('modelScript/forecast.py', {...ForecastModelData,n_steps:1});
 
     console.log('Data received:', req.body);
     console.log('Anomaly result:', anomalyResult);
@@ -173,7 +163,7 @@ app.post('/data', async (req, res) => {
     console.log('Sending message to queue:', message);
 
     await sendMessage('kpi_queue', JSON.stringify(message));
-    if(anomalyResult == 0){
+    if(anomalyResult == 1){
       const kpiAlertMessage = {
         KPI_Name,
         KPI_Value,
@@ -182,6 +172,11 @@ app.post('/data', async (req, res) => {
       await sendMessage('kpi_alert_queue', JSON.stringify(kpiAlertMessage));
     }
 
+    const estimatedAnomalies = await forecastAndCheckAnomalies(ForecastModelData,10);
+    console.log('Estimated anomalies:', estimatedAnomalies);
+    if(estimatedAnomalies.length > 0){
+    await sendMessage('forecast-anomalies-queue', JSON.stringify(estimatedAnomalies));
+    }
     res.status(200).send('Data processed successfully');
   } catch (error) {
     console.error('Error running model:', error);
